@@ -53,10 +53,25 @@ fn initialize_logging(envvar_name: &str) -> Result<(), Error> {
     Ok(())
 }
 
+//NOTE: a closure cannot be passed directly into on_add_peer
+//because of a lifetime issue with closures picking a particluar lifetime
+fn on_peer_added<T>(_ctx: T) -> impl Fn(&str) {
+    |id| println!("peer id added: {id}")
+}
+
+fn on_peer_removed<T>(_ctx: T) -> impl Fn(&str) {
+    |id| println!("peer id removed: {id}")
+}
+
 #[tokio::main]
 async fn main() -> Result<(), Error> {
     let args = Args::parse();
-    let server = Server::spawn(Handler::new);
+
+    let server = Server::spawn(|s| {
+        Handler::new(s)
+            .on_add_peer(on_peer_added(5))
+            .on_remove_peer(on_peer_removed(5))
+    });
 
     initialize_logging("WEBRTCSINK_SIGNALLING_SERVER_LOG")?;
 

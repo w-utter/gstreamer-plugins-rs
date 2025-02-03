@@ -36,7 +36,7 @@ impl Session {
 
 pin_project! {
     #[must_use = "streams do nothing unless polled"]
-    pub struct Handler {
+    pub struct Handler<OnAddPeer = (), OnRemovePeer = (), OnAddPeerProducer = ()> {
         #[pin]
         stream: Pin<Box<dyn Stream<Item=(String, Option<p::IncomingMessage>)> + Send>>,
         items: VecDeque<(String, p::OutgoingMessage)>,
@@ -44,6 +44,25 @@ pin_project! {
         sessions: HashMap<String, Session>,
         consumer_sessions: HashMap<String, HashSet<String>>,
         producer_sessions: HashMap<String, HashSet<String>>,
+        on_add_peer: OnAddPeer,
+        on_remove_peer: OnRemovePeer,
+        on_add_peer_producer: OnAddPeerProducer,
+    }
+}
+
+pub trait Callable<A> {
+    fn call(&self) -> impl Fn(A);
+}
+
+impl<T: Fn(A), A> Callable<A> for T {
+    fn call(&self) -> impl Fn(A) {
+        self
+    }
+}
+
+impl<A> Callable<A> for () {
+    fn call(&self) -> impl Fn(A) {
+        |_| ()
     }
 }
 
@@ -60,6 +79,103 @@ impl Handler {
             sessions: Default::default(),
             consumer_sessions: Default::default(),
             producer_sessions: Default::default(),
+            on_add_peer: (),
+            on_add_peer_producer: (),
+            on_remove_peer: (),
+        }
+    }
+}
+
+impl<PA, PR, PP> Handler<PA, PR, PP>
+where
+    PA: for<'a> Callable<&'a str>,
+    PR: for<'a> Callable<&'a str>,
+    PP: for<'a> Callable<&'a str>,
+{
+    pub fn on_add_peer<A>(self, on_add_peer: A) -> Handler<A, PR, PP>
+    where
+        A: for<'a> Callable<&'a str>,
+    {
+        let Self {
+            stream,
+            items,
+            peers,
+            sessions,
+            consumer_sessions,
+            producer_sessions,
+            on_add_peer_producer,
+            on_remove_peer,
+            ..
+        } = self;
+
+        Handler {
+            stream,
+            items,
+            peers,
+            sessions,
+            consumer_sessions,
+            producer_sessions,
+            on_remove_peer,
+            on_add_peer_producer,
+            on_add_peer,
+        }
+    }
+
+    pub fn on_remove_peer<R>(self, on_remove_peer: R) -> Handler<PA, R, PP>
+    where
+        R: for<'a> Callable<&'a str>,
+    {
+        let Self {
+            stream,
+            items,
+            peers,
+            sessions,
+            consumer_sessions,
+            producer_sessions,
+            on_add_peer,
+            on_add_peer_producer,
+            ..
+        } = self;
+
+        Handler {
+            stream,
+            items,
+            peers,
+            sessions,
+            consumer_sessions,
+            producer_sessions,
+            on_remove_peer,
+            on_add_peer,
+            on_add_peer_producer,
+        }
+    }
+
+    pub fn on_add_peer_producer<P>(self, on_add_peer_producer: P) -> Handler<PA, PR, P>
+    where
+        P: for<'a> Callable<&'a str>,
+    {
+        let Self {
+            stream,
+            items,
+            peers,
+            sessions,
+            consumer_sessions,
+            producer_sessions,
+            on_add_peer,
+            on_remove_peer,
+            ..
+        } = self;
+
+        Handler {
+            stream,
+            items,
+            peers,
+            sessions,
+            consumer_sessions,
+            producer_sessions,
+            on_remove_peer,
+            on_add_peer,
+            on_add_peer_producer,
         }
     }
 
@@ -70,17 +186,7 @@ impl Handler {
         msg: p::IncomingMessage,
     ) -> Result<(), Error> {
         match msg {
-            p::IncomingMessage::NewPeer => {
-                self.peers.insert(peer_id.to_string(), Default::default());
-                self.items.push_back((
-                    peer_id.into(),
-                    p::OutgoingMessage::Welcome {
-                        peer_id: peer_id.to_string(),
-                    },
-                ));
-
-                Ok(())
-            }
+            p::IncomingMessage::NewPeer => self.add_peer(peer_id),
             p::IncomingMessage::SetPeerStatus(status) => self.set_peer_status(peer_id, &status),
             p::IncomingMessage::StartSession(message) => {
                 self.start_session(&message.peer_id, peer_id, message.offer.as_deref())
@@ -142,8 +248,24 @@ impl Handler {
     }
 
     #[instrument(level = "debug", skip(self))]
+    /// Add a peer, this can cause sessions to be started
+    fn add_peer(&mut self, peer_id: &str) -> Result<(), Error> {
+        self.on_add_peer.call()(peer_id);
+        self.peers.insert(peer_id.to_string(), Default::default());
+        self.items.push_back((
+            peer_id.into(),
+            p::OutgoingMessage::Welcome {
+                peer_id: peer_id.to_string(),
+            },
+        ));
+        Ok(())
+    }
+
+    #[instrument(level = "debug", skip(self))]
     /// Remove a peer, this can cause sessions to be ended
     fn remove_peer(&mut self, peer_id: &str) {
+        self.on_remove_peer.call()(peer_id);
+
         info!(peer_id = %peer_id, "removing peer");
         let peer_status = match self.peers.remove(peer_id) {
             Some(peer_status) => peer_status,
@@ -255,7 +377,12 @@ impl Handler {
             ));
         }
 
-        info!(peer_id = %peer_id, "registered as a producer");
+        if status.producing() {
+            info!(peer_id = %peer_id, "registered as a producer");
+            self.on_add_peer_producer.call()(peer_id);
+        } else {
+            info!(peer_id = %peer_id, "peer status changed");
+        }
 
         Ok(())
     }
@@ -325,7 +452,12 @@ impl Handler {
     }
 }
 
-impl Stream for Handler {
+impl<PA, PR, PP> Stream for Handler<PA, PR, PP>
+where
+    PA: for<'a> Callable<&'a str>,
+    PR: for<'a> Callable<&'a str>,
+    PP: for<'a> Callable<&'a str>,
+{
     type Item = (String, p::OutgoingMessage);
 
     fn poll_next(mut self: Pin<&mut Self>, cx: &mut TaskContext<'_>) -> Poll<Option<Self::Item>> {
