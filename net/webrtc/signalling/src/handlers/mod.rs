@@ -50,6 +50,13 @@ pin_project! {
     }
 }
 
+#[derive(Debug)]
+pub struct HandlerData<'a> {
+    pub peers: &'a HashMap<PeerId, PeerStatus>,
+    pub consumer_sessions: &'a HashMap<String, HashSet<String>>,
+    pub producer_sessions: &'a HashMap<String, HashSet<String>>,
+}
+
 pub trait Callable<A> {
     fn call(&self) -> impl Fn(A);
 }
@@ -88,13 +95,13 @@ impl Handler {
 
 impl<PA, PR, PP> Handler<PA, PR, PP>
 where
-    PA: for<'a> Callable<&'a str>,
-    PR: for<'a> Callable<&'a str>,
-    PP: for<'a> Callable<&'a str>,
+    PA: for<'a, 'b> Callable<(HandlerData<'a>, &'b str)>,
+    PR: for<'a, 'b> Callable<(HandlerData<'a>, &'b str)>,
+    PP: for<'a, 'b> Callable<(HandlerData<'a>, &'b str)>,
 {
     pub fn on_add_peer<A>(self, on_add_peer: A) -> Handler<A, PR, PP>
     where
-        A: for<'a> Callable<&'a str>,
+        A: for<'a, 'b> Callable<(HandlerData<'a>, &'b str)>,
     {
         let Self {
             stream,
@@ -123,7 +130,7 @@ where
 
     pub fn on_remove_peer<R>(self, on_remove_peer: R) -> Handler<PA, R, PP>
     where
-        R: for<'a> Callable<&'a str>,
+        R: for<'a, 'b> Callable<(HandlerData<'a>, &'b str)>,
     {
         let Self {
             stream,
@@ -152,7 +159,7 @@ where
 
     pub fn on_add_peer_producer<P>(self, on_add_peer_producer: P) -> Handler<PA, PR, P>
     where
-        P: for<'a> Callable<&'a str>,
+        P: for<'a, 'b> Callable<(HandlerData<'a>, &'b str)>,
     {
         let Self {
             stream,
@@ -176,6 +183,14 @@ where
             on_remove_peer,
             on_add_peer,
             on_add_peer_producer,
+        }
+    }
+
+    pub fn handler_data<'a>(&'a self) -> HandlerData<'a> {
+        HandlerData {
+            peers: &self.peers,
+            consumer_sessions: &self.consumer_sessions,
+            producer_sessions: &self.producer_sessions,
         }
     }
 
@@ -250,7 +265,7 @@ where
     #[instrument(level = "debug", skip(self))]
     /// Add a peer, this can cause sessions to be started
     fn add_peer(&mut self, peer_id: &str) -> Result<(), Error> {
-        self.on_add_peer.call()(peer_id);
+        self.on_add_peer.call()((self.handler_data(), peer_id));
         self.peers.insert(peer_id.to_string(), Default::default());
         self.items.push_back((
             peer_id.into(),
@@ -264,7 +279,7 @@ where
     #[instrument(level = "debug", skip(self))]
     /// Remove a peer, this can cause sessions to be ended
     fn remove_peer(&mut self, peer_id: &str) {
-        self.on_remove_peer.call()(peer_id);
+        self.on_remove_peer.call()((self.handler_data(), peer_id));
 
         info!(peer_id = %peer_id, "removing peer");
         let peer_status = match self.peers.remove(peer_id) {
@@ -379,7 +394,7 @@ where
 
         if status.producing() {
             info!(peer_id = %peer_id, "registered as a producer");
-            self.on_add_peer_producer.call()(peer_id);
+            self.on_add_peer_producer.call()((self.handler_data(), peer_id));
         } else {
             info!(peer_id = %peer_id, "peer status changed");
         }
@@ -454,9 +469,9 @@ where
 
 impl<PA, PR, PP> Stream for Handler<PA, PR, PP>
 where
-    PA: for<'a> Callable<&'a str>,
-    PR: for<'a> Callable<&'a str>,
-    PP: for<'a> Callable<&'a str>,
+    PA: for<'a, 'b> Callable<(HandlerData<'a>, &'b str)>,
+    PR: for<'a, 'b> Callable<(HandlerData<'a>, &'b str)>,
+    PP: for<'a, 'b> Callable<(HandlerData<'a>, &'b str)>,
 {
     type Item = (String, p::OutgoingMessage);
 

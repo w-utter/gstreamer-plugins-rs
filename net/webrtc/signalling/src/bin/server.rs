@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: MPL-2.0
 
 use clap::Parser;
-use gst_plugin_webrtc_signalling::handlers::Handler;
+use gst_plugin_webrtc_signalling::handlers::{Handler, HandlerData};
 use gst_plugin_webrtc_signalling::server::{Server, ServerError};
 use tokio::io::AsyncReadExt;
 use tokio::task;
@@ -55,13 +55,14 @@ fn initialize_logging(envvar_name: &str) -> Result<(), Error> {
 
 //NOTE: a closure cannot be passed directly into on_add_peer
 //because of a lifetime issue with closures picking a particluar lifetime
-fn on_peer_added<T>(_ctx: T) -> impl Fn(&str) {
-    |id| println!("peer id added: {id}")
+fn on_peer_added<T>(_ctx: T) -> impl Fn((HandlerData, &str)) {
+    |(_, id)| println!("peer id added: {id}")
 }
 
-fn on_peer_removed<T>(_ctx: T) -> impl Fn(&str) {
-    |id| println!("peer id removed: {id}")
+fn on_peer_removed<T>(_ctx: T) -> impl Fn((HandlerData, &str)) {
+    |(_, id)| println!("peer id removed: {id}")
 }
+
 
 #[tokio::main]
 async fn main() -> Result<(), Error> {
