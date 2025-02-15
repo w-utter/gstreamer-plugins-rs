@@ -63,16 +63,19 @@ fn on_peer_removed<T>(_ctx: T) -> impl Fn((HandlerData, &str)) {
     |(_, id)| println!("peer id removed: {id}")
 }
 
+fn on_peer_disconnect() -> impl Fn(&str) {
+    |id| println!("peer id disconnected: {id}")
+}
 
 #[tokio::main]
 async fn main() -> Result<(), Error> {
     let args = Args::parse();
 
-    let server = Server::spawn(|s| {
+    let server = Server::spawn_with(|s| {
         Handler::new(s)
             .on_add_peer(on_peer_added(5))
             .on_remove_peer(on_peer_removed(5))
-    });
+    }, on_peer_disconnect());
 
     initialize_logging("WEBRTCSINK_SIGNALLING_SERVER_LOG")?;
 

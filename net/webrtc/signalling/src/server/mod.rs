@@ -18,14 +18,20 @@ struct Peer {
     sender: mpsc::Sender<String>,
 }
 
-struct State {
+struct State<OnPeerDisconnect> {
     tx: Option<mpsc::Sender<(String, Option<String>)>>,
     peers: HashMap<String, Peer>,
+    on_peer_disconnect: OnPeerDisconnect,
 }
 
-#[derive(Clone)]
-pub struct Server {
-    state: Arc<Mutex<State>>,
+pub struct Server<OnPeerDisconnect = ()> {
+    state: Arc<Mutex<State<OnPeerDisconnect>>>,
+}
+
+impl <PD> core::clone::Clone for Server<PD> {
+    fn clone(&self) -> Self {
+        Self { state: self.state.clone() }
+    }
 }
 
 #[derive(thiserror::Error, Debug)]
@@ -48,6 +54,25 @@ impl Server {
     >(
         factory: Factory,
     ) -> Self {
+        Server::spawn_with(factory, ())
+    }
+}
+
+use crate::handlers::Callable;
+
+impl<PD> Server<PD>
+where
+    PD: for<'a> Callable<&'a str> + Send + 'static,
+{
+    pub fn spawn_with<
+        I: for<'a> Deserialize<'a>,
+        O: Serialize + std::fmt::Debug + Send + Sync,
+        Factory: FnOnce(Pin<Box<dyn Stream<Item = (String, Option<I>)> + Send>>) -> St,
+        St: Stream<Item = (String, O)> + Send + Unpin + 'static,
+    >(
+        factory: Factory,
+        on_peer_disconnect: PD,
+    ) -> Self {
         let (tx, rx) = mpsc::channel::<(String, Option<String>)>(1000);
         let mut handler = factory(Box::pin(rx.filter_map(|(peer_id, msg)| async move {
             if let Some(msg) = msg {
@@ -66,6 +91,7 @@ impl Server {
         let state = Arc::new(Mutex::new(State {
             tx: Some(tx),
             peers: HashMap::new(),
+            on_peer_disconnect,
         }));
 
         let state_clone = state.clone();
@@ -98,8 +124,12 @@ impl Server {
     }
 
     #[instrument(level = "debug", skip(state))]
-    fn remove_peer(state: Arc<Mutex<State>>, peer_id: &str) {
-        if let Some(mut peer) = state.lock().unwrap().peers.remove(peer_id) {
+    fn remove_peer(state: Arc<Mutex<State<PD>>>, peer_id: &str) {
+        let mut state = state.lock().unwrap();
+
+        if let Some(mut peer) = state.peers.remove(peer_id) {
+            state.on_peer_disconnect.call()(peer_id);
+
             let peer_id = peer_id.to_string();
             task::spawn(async move {
                 peer.sender.close_channel();
