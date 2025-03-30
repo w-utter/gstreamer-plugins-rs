@@ -75,6 +75,7 @@ async fn main() -> Result<(), Error> {
         Handler::new(s)
             .on_add_peer(on_peer_added(5))
             .on_remove_peer(on_peer_removed(5))
+            .retain_peer_id(true)
     }, on_peer_disconnect());
 
     initialize_logging("WEBRTCSINK_SIGNALLING_SERVER_LOG")?;

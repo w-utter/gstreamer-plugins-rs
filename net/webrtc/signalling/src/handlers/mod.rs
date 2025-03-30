@@ -44,6 +44,7 @@ pin_project! {
         sessions: HashMap<String, Session>,
         consumer_sessions: HashMap<String, HashSet<String>>,
         producer_sessions: HashMap<String, HashSet<String>>,
+        retain_peer_id: Option<Option<UUID>>,
         on_add_peer: OnAddPeer,
         on_remove_peer: OnRemovePeer,
         on_add_peer_producer: OnAddPeerProducer,
@@ -112,6 +113,7 @@ where
             producer_sessions,
             on_add_peer_producer,
             on_remove_peer,
+            retain_peer_id,
             ..
         } = self;
 
@@ -125,6 +127,7 @@ where
             on_remove_peer,
             on_add_peer_producer,
             on_add_peer,
+            retain_peer_id,
         }
     }
 
@@ -141,6 +144,7 @@ where
             producer_sessions,
             on_add_peer,
             on_add_peer_producer,
+            retain_peer_id,
             ..
         } = self;
 
@@ -154,6 +158,7 @@ where
             on_remove_peer,
             on_add_peer,
             on_add_peer_producer,
+            retain_peer_id,
         }
     }
 
@@ -170,6 +175,7 @@ where
             producer_sessions,
             on_add_peer,
             on_remove_peer,
+            retain_peer_id,
             ..
         } = self;
 
@@ -183,7 +189,17 @@ where
             on_remove_peer,
             on_add_peer,
             on_add_peer_producer,
+            retain_peer_id
         }
+    }
+
+    pub fn retain_peer_id(mut self, retain: bool) -> Self {
+        if retain {
+            self.retain_peer_id = Some(None);
+        } else {
+            self.retain_peer_id = None;
+        }
+        self
     }
 
     pub fn handler_data<'a>(&'a self) -> HandlerData<'a> {
@@ -428,7 +444,17 @@ where
             .get(consumer_id)
             .map_or_else(|| Err(anyhow!("No consumer with ID: '{consumer_id}'")), Ok)?;
 
-        let session_id = uuid::Uuid::new_v4().to_string();
+        let uuid = match &mut self.retain_peer_id {
+            None => uuid::Uuid::new_v4(),
+            Some(uid @ None) => {
+                let out = uuid::Uuid::new_v4();
+                *uid = out.clone();
+                out
+            }
+            Some(Some(uuid)) => uuid.clone(),
+        };
+        let session_id = uuid.to_string();
+
         self.sessions.insert(
             session_id.clone(),
             Session {
