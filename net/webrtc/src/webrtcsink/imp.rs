@@ -4256,7 +4256,16 @@ impl BaseWebRTCSink {
 
                 stream.initial_discovery_started = true;
 
-                state.create_discovery(stream)
+                match state.retained_peer_id {
+                    None => stream.create_discovery(),
+                    Some(uid @ None) => {
+                        let new_uid = uuid::Uuid::new_v4();
+                        let discovery = stream.create_discovery_with_uuid(Some(&new_uid));
+                        *uid = Some(new_uid);
+                        discovery
+                    }
+                    Some(Some(uid)) => stream.create_discovery_with_uuid(Some(uid))
+                }
             };
 
             let codecs = if !state.codecs.is_empty() {
