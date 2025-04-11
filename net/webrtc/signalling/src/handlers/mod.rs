@@ -449,7 +449,7 @@ where
             None => uuid::Uuid::new_v4(),
             Some(uid @ None) => {
                 let out = uuid::Uuid::new_v4();
-                uid = out.clone();
+                *uid = Some(out.clone());
                 out
             }
             Some(Some(uuid)) => uuid.clone(),
