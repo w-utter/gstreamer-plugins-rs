@@ -141,8 +141,18 @@ struct DiscoveryInfo {
 
 impl DiscoveryInfo {
     fn new(caps: gst::Caps) -> Self {
+        Self::new_with_uuid(caps, None)
+    }
+
+    fn new_with_uuid(caps: gst::Caps, uuid: Option<&uuid::UUID>) -> Self {
+        let id = if let Some(uuid) = uuid {
+            uuid.to_string()
+        } else {
+            uuid::Uuid::new_v4().to_string()
+        };
+
         Self {
-            id: uuid::Uuid::new_v4().to_string(),
+            id,
             caps,
             srcs: Default::default(),
         }
@@ -374,6 +384,7 @@ struct State {
     web_join_handle: Option<tokio::task::JoinHandle<()>>,
     session_mids: HashMap<String, HashMap<String, String>>,
     session_stream_names: HashMap<String, HashMap<String, String>>,
+    retained_peer_id: Option<Option<uuid::UUID>,
 }
 
 fn create_navigation_event(sink: &super::BaseWebRTCSink, msg: &str, session_id: &str) {
@@ -577,6 +588,7 @@ impl Default for State {
             web_join_handle: None,
             session_mids: HashMap::new(),
             session_stream_names: HashMap::new(),
+            retained_peer_id: None,
         }
     }
 }
@@ -1569,10 +1581,15 @@ impl InputStream {
     }
 
     fn create_discovery(&self) -> DiscoveryInfo {
-        DiscoveryInfo::new(
+        self.create_discovery_with_uuid(None)
+    }
+
+    fn create_discovery_with_uuid(&self, uuid: Option<&uuid::UUID>) -> DiscoveryInfo {
+        DiscoveryInfo::new_with_uuid(
             self.in_caps.clone().expect(
                 "We should never create a discovery for a stream that doesn't have caps set",
             ),
+            uuid
         )
     }
 
@@ -1958,7 +1975,7 @@ impl BaseWebRTCSink {
 
         let mut payloader_caps = match media {
             Some(media) => {
-                let discovery_info = stream.create_discovery();
+                let discovery_info = self.create_discovery(stream);
 
                 let codec = self
                     .select_codec(
@@ -4207,6 +4224,19 @@ impl BaseWebRTCSink {
         }
     }
 
+    fn create_discovery(&mut self, stream: &InputStream) -> DiscoveryInfo {
+        match self.retained_peer_id {
+            None => stream.create_discovery(),
+            Some(uid @ None) => {
+                let new_uid = uuid::Uuid::new_v4();
+                let discovery = stream.create_discovery_with_uuid(Some(&new_uid));
+                *uid = Some(new_uid);
+                discovery
+            }
+            Some(Some(uid)) => stream.create_discovery_with_uuid(Some(uid))
+        }
+    }
+
     fn start_stream_discovery_if_needed(&self, stream_name: &str) {
         let (codecs, discovery_info) = {
             let mut state = self.state.lock().unwrap();
@@ -4221,7 +4251,7 @@ impl BaseWebRTCSink {
 
                 stream.initial_discovery_started = true;
 
-                stream.create_discovery()
+                state.create_discovery(stream)
             };
 
             let codecs = if !state.codecs.is_empty() {
