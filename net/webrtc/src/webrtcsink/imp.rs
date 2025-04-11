@@ -144,7 +144,7 @@ impl DiscoveryInfo {
         Self::new_with_uuid(caps, None)
     }
 
-    fn new_with_uuid(caps: gst::Caps, uuid: Option<&uuid::UUID>) -> Self {
+    fn new_with_uuid(caps: gst::Caps, uuid: Option<&uuid::Uuid>) -> Self {
         let id = if let Some(uuid) = uuid {
             uuid.to_string()
         } else {
@@ -384,7 +384,7 @@ struct State {
     web_join_handle: Option<tokio::task::JoinHandle<()>>,
     session_mids: HashMap<String, HashMap<String, String>>,
     session_stream_names: HashMap<String, HashMap<String, String>>,
-    retained_peer_id: Option<Option<uuid::Uuid>,
+    retained_peer_id: Option<Option<uuid::Uuid>>,
 }
 
 fn create_navigation_event(sink: &super::BaseWebRTCSink, msg: &str, session_id: &str) {
@@ -1584,7 +1584,7 @@ impl InputStream {
         self.create_discovery_with_uuid(None)
     }
 
-    fn create_discovery_with_uuid(&self, uuid: Option<&uuid::UUID>) -> DiscoveryInfo {
+    fn create_discovery_with_uuid(&self, uuid: Option<&uuid::Uuid>) -> DiscoveryInfo {
         DiscoveryInfo::new_with_uuid(
             self.in_caps.clone().expect(
                 "We should never create a discovery for a stream that doesn't have caps set",
@@ -1962,7 +1962,7 @@ impl BaseWebRTCSink {
     }
 
     async fn request_webrtcbin_pad(
-        &self,
+        &mut self,
         webrtcbin: &gst::Element,
         stream: &mut InputStream,
         media: Option<&gst_sdp::SDPMediaRef>,
