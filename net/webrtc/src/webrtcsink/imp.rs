@@ -1962,7 +1962,7 @@ impl BaseWebRTCSink {
     }
 
     async fn request_webrtcbin_pad(
-        &mut self,
+        &self,
         webrtcbin: &gst::Element,
         stream: &mut InputStream,
         media: Option<&gst_sdp::SDPMediaRef>,
@@ -4224,8 +4224,9 @@ impl BaseWebRTCSink {
         }
     }
 
-    fn create_discovery(&mut self, stream: &InputStream) -> DiscoveryInfo {
-        match self.retained_peer_id {
+    fn create_discovery(&self, stream: &InputStream) -> DiscoveryInfo {
+        let this = self.state.lock().unwrap();
+        match &mut this.retained_peer_id {
             None => stream.create_discovery(),
             Some(uid @ None) => {
                 let new_uid = uuid::Uuid::new_v4();
