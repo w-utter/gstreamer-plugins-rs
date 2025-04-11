@@ -44,7 +44,7 @@ pin_project! {
         sessions: HashMap<String, Session>,
         consumer_sessions: HashMap<String, HashSet<String>>,
         producer_sessions: HashMap<String, HashSet<String>>,
-        retain_peer_id: Option<Option<uuid::UUID>>,
+        retain_peer_id: Option<Option<uuid::Uuid>>,
         on_add_peer: OnAddPeer,
         on_remove_peer: OnRemovePeer,
         on_add_peer_producer: OnAddPeerProducer,
@@ -449,7 +449,7 @@ where
             None => uuid::Uuid::new_v4(),
             Some(uid @ None) => {
                 let out = uuid::Uuid::new_v4();
-                *uid = out.clone();
+                uid = out.clone();
                 out
             }
             Some(Some(uuid)) => uuid.clone(),

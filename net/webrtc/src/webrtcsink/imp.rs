@@ -384,7 +384,7 @@ struct State {
     web_join_handle: Option<tokio::task::JoinHandle<()>>,
     session_mids: HashMap<String, HashMap<String, String>>,
     session_stream_names: HashMap<String, HashMap<String, String>>,
-    retained_peer_id: Option<Option<uuid::UUID>,
+    retained_peer_id: Option<Option<uuid::Uuid>,
 }
 
 fn create_navigation_event(sink: &super::BaseWebRTCSink, msg: &str, session_id: &str) {
