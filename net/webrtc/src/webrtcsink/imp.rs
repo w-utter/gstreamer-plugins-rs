@@ -4256,7 +4256,7 @@ impl BaseWebRTCSink {
 
                 stream.initial_discovery_started = true;
 
-                match state.retained_peer_id {
+                match &mut state.retained_peer_id {
                     None => stream.create_discovery(),
                     Some(uid @ None) => {
                         let new_uid = uuid::Uuid::new_v4();
