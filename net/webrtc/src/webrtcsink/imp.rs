@@ -1274,6 +1274,19 @@ impl State {
             discos.remove(position);
         }
     }
+
+    fn create_discovery(&mut self, stream: &InputStream) -> DiscoveryInfo {
+        match &mut self.retained_peer_id {
+            None => stream.create_discovery(),
+            Some(uid @ None) => {
+                let new_uid = uuid::Uuid::new_v4();
+                let discovery = stream.create_discovery_with_uuid(Some(&new_uid));
+                *uid = Some(new_uid);
+                discovery
+            }
+            Some(Some(uid)) => stream.create_discovery_with_uuid(Some(uid))
+        }
+    }
 }
 
 impl SessionInner {
@@ -4224,18 +4237,9 @@ impl BaseWebRTCSink {
         }
     }
 
-    fn create_discovery(&self, stream: &InputStream) -> DiscoveryInfo {
-        let this = self.state.lock().unwrap();
-        match &mut this.retained_peer_id {
-            None => stream.create_discovery(),
-            Some(uid @ None) => {
-                let new_uid = uuid::Uuid::new_v4();
-                let discovery = stream.create_discovery_with_uuid(Some(&new_uid));
-                *uid = Some(new_uid);
-                discovery
-            }
-            Some(Some(uid)) => stream.create_discovery_with_uuid(Some(uid))
-        }
+    fn create_discovery(&self, stream: &InputStream) -> DiscoveryInfo { 
+        let mut state = self.state.lock().unwrap();
+        state.create_discovery(stream)
     }
 
     fn start_stream_discovery_if_needed(&self, stream_name: &str) {
